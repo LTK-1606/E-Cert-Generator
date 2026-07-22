@@ -1,0 +1,6 @@
+service_account.json
+temp_certs/
+dist/
+build/
+*.log
+__pycache__/
