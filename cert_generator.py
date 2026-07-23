@@ -4,7 +4,7 @@ from reportlab.lib.pagesizes import landscape, A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from pypdf import PdfReader, PdfWriter
-from config import TEMPLATE_PDF
+from config import TEMPLATE_PDF, get_resource_path
 
 def draw_auto_scaled_string(can, text, x_center, y, max_width, font_name, initial_font_size):
     font_size = initial_font_size
@@ -20,7 +20,9 @@ def draw_auto_scaled_string(can, text, x_center, y, max_width, font_name, initia
 def generate_cert(name, level, school, term, output_path):
     packet = BytesIO()
     can = canvas.Canvas(packet, pagesize=landscape(A4))
-    pdfmetrics.registerFont(TTFont('Charissil-Bold', 'fonts/Charissil-Bold.ttf'))
+
+    font_path = get_resource_path('fonts/Charissil-Bold.ttf', internal=True)
+    pdfmetrics.registerFont(TTFont('Charissil-Bold', font_path))
     
     can.setFont("Charissil-Bold", 29)
     draw_auto_scaled_string(can, name, 300, 470, 450, "Charissil-Bold", 29)
