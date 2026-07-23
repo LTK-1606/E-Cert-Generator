@@ -30,7 +30,8 @@ def generate_cert(name, level, school, term, output_path):
     level_text = f"Primary {level}"
     can.drawCentredString(300, 420, level_text)
     can.drawCentredString(300, 400, str(school))
-    can.drawCentredString(414, 349, term)
+    term_text = f"{term}."
+    can.drawCentredString(420, 349, term_text)
     
     can.save()
     packet.seek(0)
