@@ -38,4 +38,3 @@ DRIVE_FOLDER_ID = "163AlwTOgpzR28s5NrKK5tsmU5hzADaVb"
 TEMP_DIR = "temp_certs"
 
 os.makedirs(TEMP_DIR, exist_ok=True)
-_FOLDER_CACHE = {}

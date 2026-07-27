@@ -1,7 +1,6 @@
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from tenacity import retry, wait_exponential, stop_after_attempt
-from config import _FOLDER_CACHE
 
 def col_to_letter(col_idx):
     string = ""
@@ -12,10 +11,6 @@ def col_to_letter(col_idx):
 
 def get_or_create_subfolder(drive_service, parent_folder_id, sheet_name, identifier):
     folder_name = identifier + "-" + sheet_name
-    cache_key = (parent_folder_id, folder_name)
-    if cache_key in _FOLDER_CACHE:
-        return _FOLDER_CACHE[cache_key]
-    
     escaped_name = folder_name.replace("'", "\\'")
     query = (
         f"'{parent_folder_id}' in parents and "
@@ -44,7 +39,6 @@ def get_or_create_subfolder(drive_service, parent_folder_id, sheet_name, identif
         ).execute()
         folder_id = folder.get('id')
 
-    _FOLDER_CACHE[cache_key] = folder_id
     return folder_id
 
 def get_existing_files_in_folder(drive_service, folder_id):
