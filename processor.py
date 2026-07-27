@@ -1,4 +1,5 @@
 import os
+import streamlit as st
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
 from googleapiclient.discovery import build
@@ -131,6 +132,8 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
                         print(f"Error Details: {actual_error.content.decode('utf-8')}")
                     else:
                         print(f"General Error: {actual_error}")
+
+                    st.warning(f"Failed to upload row {index+2}: {actual_error}")
 
                 finally:
                     if os.path.exists(path):
