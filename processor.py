@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 from concurrent.futures import ThreadPoolExecutor
-from tkinter import messagebox
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from tenacity import RetryError
@@ -13,25 +12,22 @@ from cert_generator import generate_cert
 
 def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, gen_callback=None, upload_callback=None):
     if not target_sheets:
-        messagebox.showerror("Error", "Please select at least one sheet.")
-        return
+        raise ValueError("Please select at least one sheet.")
+    
     if not school_term:
-        messagebox.showerror("Error", "Please enter a school term.")
-        return
+        raise ValueError("Please enter a school term.")
 
     try:
         creds, gc = authenticate_google()
         drive_service = build('drive', 'v3', credentials=creds)
     except Exception as e:
-        messagebox.showerror("Authentication Error", str(e))
-        return
+        raise Exception(f"Authentication Error: {str(e)}")
     
     try:
         sh = gc.open_by_url(sheet_url)
         identifier = sh.title.split(' ')[0]
     except Exception as e:
-        messagebox.showerror("Error", f"Could not open Google Sheet. Did you share it with the Service Account email?\n{e}")
-        return
+        raise Exception(f"Could not open Google Sheet. Did you share it with the Service Account email?\n{e}")
 
     for sheet_name in target_sheets:
         if sheet_callback:
@@ -169,7 +165,6 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
             worksheet.update(values=ids_to_upload, range_name=id_range)
             
         except Exception as e:
-            messagebox.showerror("Sheets Update Error", f"Failed to write to Google Sheet for {sheet_name}.\nError: {str(e)}")
-            return 
-        
-    messagebox.showinfo("Success", "Certificates generated, uploaded, and sheet updated successfully!")
+            raise Exception(f"Failed to write to Google Sheet for {sheet_name}.\nError: {str(e)}")
+            
+    return True

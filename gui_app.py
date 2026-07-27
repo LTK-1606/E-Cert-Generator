@@ -103,15 +103,27 @@ class CertApp:
 
         self.btn_run.config(state="disabled")
         def worker():
-            run_generation(
-                url, 
-                selected_sheets, 
-                term, 
-                sheet_callback=self.update_sheet_label,
-                gen_callback=self.update_gen_progress,
-                upload_callback=self.update_upload_progress
-            )
-            self.root.after(0, lambda: self.btn_run.config(state="normal"))
+            try:
+                # 1. Run the backend processor
+                run_generation(
+                    url, 
+                    selected_sheets, 
+                    term, 
+                    sheet_callback=self.update_sheet_label,
+                    gen_callback=self.update_gen_progress,
+                    upload_callback=self.update_upload_progress
+                )
+                
+                # 2. If it finishes without errors, show the Tkinter Success popup
+                self.root.after(0, lambda: messagebox.showinfo("Success", "Certificates generated, uploaded, and sheet updated successfully!"))
+                
+            except Exception as e:
+                # 3. If processor.py raises an error, catch it and show a Tkinter Error popup
+                self.root.after(0, lambda err=e: messagebox.showerror("Processing Error", str(err)))
+                
+            finally:
+                # 4. Always re-enable the button when done
+                self.root.after(0, lambda: self.btn_run.config(state="normal"))
 
         threading.Thread(target=worker, daemon=True).start()
 
