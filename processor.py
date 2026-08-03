@@ -1,7 +1,9 @@
 import os
+import re
 import streamlit as st
 import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from gspread.utils import rowcol_to_a1
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from tenacity import RetryError
@@ -11,12 +13,24 @@ from auth import authenticate_google
 from drive_utils import col_to_letter, get_or_create_subfolder, get_existing_files_in_folder, upload_file
 from cert_generator import generate_cert
 
-def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, gen_callback=None, upload_callback=None):
+def extract_folder_id(url_or_id):
+    if not url_or_id:
+        return None
+    url_or_id = url_or_id.strip()
+    match = re.search(r'folders/([a-zA-Z0-9-_]+)', url_or_id)
+    if match:
+        return match.group(1)
+    return url_or_id
+
+def run_generation(sheet_url, target_sheets, primary_col, user_id_col, template_config, template_bytes, school_term="", target_drive_folder="", sheet_callback=None, gen_callback=None, upload_callback=None):
     if not target_sheets:
         raise ValueError("Please select at least one sheet.")
     
-    if not school_term:
-        raise ValueError("Please enter a school term.")
+    if not primary_col:
+        raise ValueError("Please select a primary column for file naming and validation.")
+        
+    if not user_id_col:
+        raise ValueError("Please select a user ID column for unique file naming.")
 
     try:
         creds, gc = authenticate_google()
@@ -30,9 +44,14 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
     except Exception as e:
         raise Exception(f"Could not open Google Sheet. Did you share it with the Service Account email?\n{e}")
 
+    parent_folder_id = extract_folder_id(target_drive_folder) if target_drive_folder else DRIVE_FOLDER_ID
+    if not parent_folder_id:
+        parent_folder_id = DRIVE_FOLDER_ID
+
     for sheet_name in target_sheets:
         if sheet_callback:
             sheet_callback(sheet_name)
+            
         worksheet = sh.worksheet(sheet_name)
         all_values = worksheet.get_all_values()
 
@@ -54,20 +73,27 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
         if 'Cert_Link_ID' not in df.columns:
             df['Cert_Link_ID'] = ""
 
-        sheet_folder_id = get_or_create_subfolder(drive_service, DRIVE_FOLDER_ID, sheet_name, identifier)  
+        df['School Term'] = school_term
+
+        if 'Level' in df.columns:
+            def format_level(val):
+                val_str = str(val).strip()
+                if val_str and val_str.lower() != 'nan' and not val_str.lower().startswith('primary'):
+                    return f"Primary {val_str}"
+                return val_str
+            df['Level'] = df['Level'].apply(format_level)
+
+        sheet_folder_id = get_or_create_subfolder(drive_service, parent_folder_id, sheet_name, identifier)  
         existing_files = get_existing_files_in_folder(drive_service, sheet_folder_id)     
 
         valid_rows = []
         for index, row in df.iterrows():
-            if 'Full Name' in df.columns and str(row.get('Full Name', '')).strip() != "":
-                name = str(row.get('Full Name', '')).strip()
-            elif 'Child Name' in df.columns and str(row.get('Child Name', '')).strip() != "":
-                name = str(row.get('Child Name', '')).strip()
-            else:
-                name = ""
+            primary_val = ""
+            if primary_col in df.columns and str(row.get(primary_col, '')).strip() != "":
+                primary_val = str(row.get(primary_col, '')).strip()
             
-            if name:
-                valid_rows.append((index, row, name))
+            if primary_val:
+                valid_rows.append((index, row, primary_val))
 
         total_valid = len(valid_rows)
         if gen_callback:
@@ -75,19 +101,19 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
         if upload_callback:
             upload_callback(0, total_valid)
 
-        upload_tasks = []
+        futures_map = {}
         skipped_count = 0
         gen_count = 0
+        
         with ThreadPoolExecutor(max_workers=20) as executor:
-            for index, row, name in valid_rows:
-                id = row.get('User ID', '')
-                level = row.get('Level', '')
-                school = row.get('School', '')
+            for index, row, primary_val in valid_rows:
                 
-                safe_name = name.replace('/', '-').replace('\\', '-')
-                safe_id = str(id).replace('/', '-').replace('\\', '-')
+                safe_primary_val = primary_val.replace('/', '-').replace('\\', '-')
                 
-                file_name = f"{identifier}-{safe_name}-{safe_id}.pdf"
+                user_id_val = str(row.get(user_id_col, '')).strip() if user_id_col in df.columns else ""
+                safe_user_id = user_id_val.replace('/', '-').replace('\\', '-') if user_id_val else f"Row{index+2}"
+                
+                file_name = f"{identifier}-{safe_primary_val}-{safe_user_id}.pdf"
 
                 if file_name in existing_files:
                     df.at[index, 'Cert_Link'] = existing_files[file_name]['link']
@@ -95,6 +121,7 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
                     
                     skipped_count += 1
                     gen_count += 1
+                    
                     if gen_callback:
                         gen_callback(gen_count, total_valid)
                     if upload_callback:
@@ -102,17 +129,20 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
                     continue
 
                 local_path = os.path.join(TEMP_DIR, file_name)
-                generate_cert(name, level, school, school_term, local_path)
+                row_dict = row.to_dict()
+                generate_cert(template_bytes, row_dict, template_config, local_path)
                 
                 gen_count += 1
                 if gen_callback:
                     gen_callback(gen_count, total_valid)
                 
                 future = executor.submit(upload_file, creds, sheet_folder_id, local_path, file_name)
-                upload_tasks.append((index, local_path, future))
+                futures_map[future] = (index, local_path)
 
             upload_count = skipped_count
-            for index, path, future in upload_tasks:
+            
+            for future in as_completed(futures_map):
+                index, path = futures_map[future]
                 try:
                     link, link_id = future.result()
                     df.at[index, 'Cert_Link'] = link
@@ -144,7 +174,7 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
                         upload_callback(upload_count, total_valid)
 
         try:
-            header = worksheet.row_values(1)
+            sheet_header_labels  = worksheet.row_values(1)
 
             def get_or_add_column(col_name, current_header):
                 if col_name not in current_header:
@@ -154,18 +184,33 @@ def run_generation(sheet_url, target_sheets, school_term, sheet_callback=None, g
                     return new_idx
                 return current_header.index(col_name) + 1
             
-            link_col_idx = get_or_add_column('Cert_Link', header)
-            id_col_idx = get_or_add_column('Cert_Link_ID', header)
+            link_col_idx = get_or_add_column('Cert_Link', sheet_header_labels)
+            id_col_idx = get_or_add_column('Cert_Link_ID', sheet_header_labels)
 
-            link_col_letter = col_to_letter(link_col_idx)
-            link_range = f"{link_col_letter}2:{link_col_letter}{len(df) + 1}"
-            links_to_upload = [[str(df.at[i, 'Cert_Link'])] for i in df.index]
-            worksheet.update(values=links_to_upload, range_name=link_range)
+            user_id_header_name = user_id_col if user_id_col in sheet_header_labels else None
+            user_id_col_idx = sheet_header_labels.index(user_id_header_name) + 1      
+            sheet_user_ids = worksheet.col_values(user_id_col_idx)          
+            row_mapping = {str(uid): idx + 1 for idx, uid in enumerate(sheet_user_ids) if idx > 0}
+            batch_updates = []
 
-            id_col_letter = col_to_letter(id_col_idx)
-            id_range = f"{id_col_letter}2:{id_col_letter}{len(df) + 1}"
-            ids_to_upload = [[str(df.at[i, 'Cert_Link_ID'])] for i in df.index]
-            worksheet.update(values=ids_to_upload, range_name=id_range)
+            for _, row in df.iterrows():
+                df_user_id = str(row[user_id_col]).strip() if user_id_col in df.columns else ""
+                
+                if df_user_id in row_mapping:
+                    target_row = row_mapping[df_user_id]
+                    
+                    batch_updates.append({
+                        'range': rowcol_to_a1(target_row, link_col_idx),
+                        'values': [[str(row['Cert_Link'])]]
+                    })
+                    
+                    batch_updates.append({
+                        'range': rowcol_to_a1(target_row, id_col_idx),
+                        'values': [[str(row['Cert_Link_ID'])]]
+                    })
+
+            if batch_updates:
+                worksheet.batch_update(batch_updates)
             
         except Exception as e:
             raise Exception(f"Failed to write to Google Sheet for {sheet_name}.\nError: {str(e)}")
