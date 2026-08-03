@@ -12,6 +12,17 @@ st.set_page_config(
 
 st.title("📜 E-Cert Generator")
 
+@st.cache_data(ttl=300)
+def get_sheet_data(sheet_url, sheet_name):
+    """Fetches and caches sheet headers and row data to avoid hitting quota limits."""
+    _, gc = authenticate_google()
+    sh = gc.open_by_url(sheet_url)
+    ws = sh.worksheet(sheet_name)
+    headers = ws.row_values(1)
+    row_count = ws.row_count
+    row2 = ws.row_values(2) if row_count > 1 else []
+    return headers, row2, row_count
+
 st.header("Step 1: Upload PDF Template")
 uploaded_template = st.file_uploader("Upload your template (Ensure the areas to be filled in are blank)", type=["pdf"])
 
@@ -55,25 +66,20 @@ if "worksheets" in st.session_state and uploaded_template:
     
     st.write("**A. Choose Worksheets:**")
     selected_sheets = st.multiselect(
-        "Ensure every worksheeet you select has the same column structure. The first row of each sheet should contain headers.",
+        "Ensure every worksheet you select has the same column structure. The first row of each sheet should contain headers.",
         options=st.session_state["worksheets"],
         key="selected_sheets_multiselect"
     )
     
     if selected_sheets:
         try:
-            _, gc = authenticate_google()
-            sh = gc.open_by_url(st.session_state["loaded_url"])
-            ws = sh.worksheet(selected_sheets[0])
-            headers = ws.row_values(1)
-
+            headers, row2, _ = get_sheet_data(st.session_state["loaded_url"], selected_sheets[0])
+            
+            headers = list(headers)
             if 'School Term' not in headers:
                 headers.append('School Term')
 
-            sample_data = {}
-            if ws.row_count > 1:
-                row2 = ws.row_values(2)
-                sample_data = dict(zip(headers, row2 + [''] * (len(headers) - len(row2))))
+            sample_data = dict(zip(headers, row2 + [''] * (len(headers) - len(row2))))
             
             st.session_state["sheet_headers"] = headers
             st.session_state["sample_row"] = sample_data
@@ -123,10 +129,10 @@ if "worksheets" in st.session_state and uploaded_template:
                 st.info("Adjust the X (horizontal) and Y (vertical) positions. (0,0 is the bottom-left corner of the page).")
                 for i, col in enumerate(selected_cols):
                     sample_val = school_term if col == 'School Term' else st.session_state['sample_row'].get(col, '')
-                    st.markdown(f"**Field: `{col}`** *(Sample: {st.session_state['sample_row'].get(col, '')})*")
+                    st.markdown(f"**Field: `{col}`** *(Sample: {sample_val})*")
                     c1, c2, c3 = st.columns(3)
                     x = c1.number_input("X Position", value=300, key=f"x_{col}", step=10)
-                    y = c2.number_input("Y Position", value=470 - (i*50), key=f"y_{col}", step=10)
+                    y = c2.number_input("Y Position", value=500 - ((i+1)*50), key=f"y_{col}", step=10)
                     size = c3.number_input("Font Size", value=20, key=f"size_{col}", step=2)
                     center = st.checkbox("Center align", value=True, key=f"center_{col}")
                     
@@ -134,7 +140,7 @@ if "worksheets" in st.session_state and uploaded_template:
                     
             with col_preview:
                 st.markdown("**Live PDF Preview**")
-                if st.button("🔄 Generate Preview", type="secondary", use_container_width=True):
+                if st.button("🔄 Generate Preview", type="secondary", width='stretch'):
                     template_bytes = uploaded_template.getvalue()
                     
                     sample_row = dict(st.session_state["sample_row"])
@@ -151,14 +157,14 @@ if "worksheets" in st.session_state and uploaded_template:
                         page = doc[page_num]
                         pix = page.get_pixmap()
                         img_bytes = pix.tobytes("png")
-                        st.image(img_bytes, use_container_width=True)
+                        st.image(img_bytes, width='stretch')
 
 else:
     st.info("Please upload a PDF template and load your Google Sheet worksheets above to continue.")
 
 st.divider()
 
-if st.button("🚀 Start Bulk Generation & Upload", type="primary", use_container_width=True):
+if st.button("🚀 Start Bulk Generation & Upload", type="primary", width='stretch'):
     if not uploaded_template:
         st.error("Please upload a PDF template.")
     elif not sheet_url:
