@@ -1,5 +1,5 @@
 import streamlit as st
-import base64
+import fitz
 from auth import authenticate_google
 from processor import run_generation
 from cert_generator import generate_cert
@@ -93,11 +93,11 @@ if "worksheets" in st.session_state and uploaded_template:
             )
             
             st.divider()
-            st.write("**C. Select Key Columns: **")
+            st.write("**C. Select Key Columns:**")
             col_a, col_b = st.columns(2)
             with col_a:
                 primary_col = st.selectbox(
-                    "Which column should be used for the child's name?",
+                    "Which column should be used for the cert's name?",
                     options=headers,
                     key="primary_col_select"
                 )
@@ -136,6 +136,7 @@ if "worksheets" in st.session_state and uploaded_template:
                 st.markdown("**Live PDF Preview**")
                 if st.button("🔄 Generate Preview", type="secondary", use_container_width=True):
                     template_bytes = uploaded_template.getvalue()
+                    
                     sample_row = dict(st.session_state["sample_row"])
                     sample_row['School Term'] = school_term
                     if 'Level' in sample_row:
@@ -145,9 +146,12 @@ if "worksheets" in st.session_state and uploaded_template:
                     
                     preview_bytes = generate_cert(template_bytes, sample_row, template_config)
                     
-                    base64_pdf = base64.b64encode(preview_bytes).decode('utf-8')
-                    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="500" type="application/pdf"></iframe>'
-                    st.markdown(pdf_display, unsafe_allow_html=True)
+                    doc = fitz.open(stream=preview_bytes, filetype="pdf")
+                    for page_num in range(len(doc)):
+                        page = doc[page_num]
+                        pix = page.get_pixmap()
+                        img_bytes = pix.tobytes("png")
+                        st.image(img_bytes, use_container_width=True)
 
 else:
     st.info("Please upload a PDF template and load your Google Sheet worksheets above to continue.")
