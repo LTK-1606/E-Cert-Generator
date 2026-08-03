@@ -185,55 +185,73 @@ if st.button("🚀 Start Bulk Generation & Upload", type="primary", width='stret
     elif not template_config:
         st.error("Please map at least one field for the certificate template.")
     else:
-        with st.status("Processing Certificates...", expanded=True) as status:
-            sheet_status = st.empty()
-            col1, col2 = st.columns(2)
+        with st.spinner("Validating columns exist across all selected sheets..."):
+            validation_failed = False
+            required_cols = [primary_col, user_id_col] + [c for c in template_config.keys() if c != 'School Term']
+            
+            for s_name in selected_sheets:
+                try:
+                    s_headers, _, _ = get_sheet_data(sheet_url, s_name)
+                    missing = [col for col in required_cols if col not in s_headers]
+                    if missing:
+                        st.error(f"❌ **Validation Error:** Sheet **'{s_name}'** is missing required column(s): `{', '.join(missing)}`. All selected worksheets must have identical column structures.")
+                        validation_failed = True
+                        break
+                except Exception as e:
+                    st.error(f"❌ Could not validate sheet '{s_name}': {e}")
+                    validation_failed = True
+                    break
 
-            with col1:
-                st.write("**PDF Generation**")
-                gen_label = st.empty()
-                gen_bar = st.progress(0)
+        if not validation_failed:
+            with st.status("Processing Certificates...", expanded=True) as status:
+                sheet_status = st.empty()
+                col1, col2 = st.columns(2)
 
-            with col2:
-                st.write("**Drive Uploads**")
-                upload_label = st.empty()
-                upload_bar = st.progress(0)
+                with col1:
+                    st.write("**PDF Generation**")
+                    gen_label = st.empty()
+                    gen_bar = st.progress(0)
 
-            def update_sheet_label(name):
-                sheet_status.write(f"📁 **Currently Processing Sheet:** `{name}`")
+                with col2:
+                    st.write("**Drive Uploads**")
+                    upload_label = st.empty()
+                    upload_bar = st.progress(0)
 
-            def update_gen_progress(current, total):
-                progress_ratio = current / total if total > 0 else 0.0
-                gen_bar.progress(progress_ratio)
-                gen_label.caption(f"PDF Generation Progress: **{current} / {total}**")
+                def update_sheet_label(name):
+                    sheet_status.write(f"📁 **Currently Processing Sheet:** `{name}`")
 
-            def update_upload_progress(current, total):
-                progress_ratio = current / total if total > 0 else 0.0
-                upload_bar.progress(progress_ratio)
-                upload_label.caption(f"Drive Upload Progress: **{current} / {total}**")
+                def update_gen_progress(current, total):
+                    progress_ratio = current / total if total > 0 else 0.0
+                    gen_bar.progress(progress_ratio)
+                    gen_label.caption(f"PDF Generation Progress: **{current} / {total}**")
 
-            try:
-                template_bytes = uploaded_template.getvalue()
-                run_generation(
-                    sheet_url=sheet_url,
-                    target_sheets=selected_sheets,
-                    primary_col=primary_col,
-                    user_id_col=user_id_col,
-                    template_config=template_config,
-                    template_bytes=template_bytes,
-                    school_term=st.session_state.get("school_term_input", "Academic Year 2026 Term 2"),
-                    target_drive_folder=drive_folder_url,
-                    sheet_callback=update_sheet_label,
-                    gen_callback=update_gen_progress,
-                    upload_callback=update_upload_progress
-                )
-                
-                status.update(label="All tasks finished successfully!", state="complete", expanded=False)
-                st.session_state["process_completed"] = True
+                def update_upload_progress(current, total):
+                    progress_ratio = current / total if total > 0 else 0.0
+                    upload_bar.progress(progress_ratio)
+                    upload_label.caption(f"Drive Upload Progress: **{current} / {total}**")
 
-            except Exception as e:
-                status.update(label="An error occurred during processing.", state="error", expanded=True)
-                st.error(f"Processing failed: {e}")
+                try:
+                    template_bytes = uploaded_template.getvalue()
+                    run_generation(
+                        sheet_url=sheet_url,
+                        target_sheets=selected_sheets,
+                        primary_col=primary_col,
+                        user_id_col=user_id_col,
+                        template_config=template_config,
+                        template_bytes=template_bytes,
+                        school_term=st.session_state.get("school_term_input", "Academic Year 2026 Term 2"),
+                        target_drive_folder=drive_folder_url,
+                        sheet_callback=update_sheet_label,
+                        gen_callback=update_gen_progress,
+                        upload_callback=update_upload_progress
+                    )
+                    
+                    status.update(label="All tasks finished successfully!", state="complete", expanded=False)
+                    st.session_state["process_completed"] = True
+
+                except Exception as e:
+                    status.update(label="An error occurred during processing.", state="error", expanded=True)
+                    st.error(f"Processing failed: {e}")
 
 if st.session_state.get("process_completed", False):
     st.balloons()
