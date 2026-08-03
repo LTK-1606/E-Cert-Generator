@@ -49,6 +49,7 @@ if st.button("Load Worksheets"):
                 worksheets = [ws.title for ws in sh.worksheets()]
                 st.session_state["worksheets"] = worksheets
                 st.session_state["loaded_url"] = sheet_url
+                st.session_state.pop("current_cached_sheet", None)
                 st.success("Worksheets loaded successfully! Select your sheets below.")
                 
             except Exception as e:
@@ -72,21 +73,27 @@ if "worksheets" in st.session_state and uploaded_template:
     )
     
     if selected_sheets:
-        try:
-            headers, row2, _ = get_sheet_data(st.session_state["loaded_url"], selected_sheets[0])
-            
-            headers = list(headers)
-            if 'School Term' not in headers:
-                headers.append('School Term')
+        current_sheet = selected_sheets[0]
+        
+        if "sheet_headers" not in st.session_state or st.session_state.get("current_cached_sheet") != current_sheet:
+            try:
+                headers, row2, _ = get_sheet_data(st.session_state["loaded_url"], current_sheet)
+                
+                headers = list(headers)
+                if 'School Term' not in headers:
+                    headers.append('School Term')
 
-            sample_data = dict(zip(headers, row2 + [''] * (len(headers) - len(row2))))
-            
-            st.session_state["sheet_headers"] = headers
-            st.session_state["sample_row"] = sample_data
-            
-        except Exception as e:
-            st.error(f"Failed to fetch headers for sheet '{selected_sheets[0]}': {e}")
-            headers = []
+                sample_data = dict(zip(headers, row2 + [''] * (len(headers) - len(row2))))
+                
+                st.session_state["sheet_headers"] = headers
+                st.session_state["sample_row"] = sample_data
+                st.session_state["current_cached_sheet"] = current_sheet
+                
+            except Exception as e:
+                st.error(f"Failed to fetch headers for sheet '{current_sheet}': {e}")
+                st.session_state["sheet_headers"] = []
+
+        headers = st.session_state.get("sheet_headers", [])
 
         if headers:
             st.divider()
