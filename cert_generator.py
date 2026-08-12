@@ -8,19 +8,39 @@ from pypdf import PdfReader, PdfWriter
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(BASE_DIR, 'fonts', 'Charissil-Bold.ttf')
 
-def draw_auto_scaled_string(can, text, x_center, y, max_width, font_name, initial_font_size, center_align=True):
-    font_size = initial_font_size
-    text_width = pdfmetrics.stringWidth(str(text), font_name, font_size)
-    
-    while text_width > max_width and font_size > 8:
-        font_size -= 1
-        text_width = pdfmetrics.stringWidth(str(text), font_name, font_size)
-        
+def draw_wrapped_string(can, text, x_center, y, max_width, font_name, font_size, center_align=True):
+    """
+    Wraps text into multiple lines when it exceeds max_width at word boundaries,
+    preserving the original font size instead of shrinking it.
+    """
     can.setFont(font_name, font_size)
-    if center_align:
-        can.drawCentredString(x_center, y, str(text))
-    else:
-        can.drawString(x_center, y, str(text))
+    words = str(text).split(' ')
+    lines = []
+    current_line = []
+
+    for word in words:
+        test_line = ' '.join(current_line + [word])
+        if pdfmetrics.stringWidth(test_line, font_name, font_size) <= max_width:
+            current_line.append(word)
+        else:
+            if current_line:
+                lines.append(' '.join(current_line))
+                current_line = [word]
+            else:
+                lines.append(word)
+                current_line = []
+    
+    if current_line:
+        lines.append(' '.join(current_line))
+
+    line_height = font_size * 1.2
+
+    for i, line in enumerate(lines):
+        line_y = y - (i * line_height)
+        if center_align:
+            can.drawCentredString(x_center, line_y, line)
+        else:
+            can.drawString(x_center, line_y, line)
 
 def generate_cert(template_bytes, row_dict, template_config, output_path=None):
     """
@@ -51,7 +71,7 @@ def generate_cert(template_bytes, row_dict, template_config, output_path=None):
         center = cfg.get('center_align', True)
         max_w = cfg.get('max_width', 450)
 
-        draw_auto_scaled_string(can, val, x, y, max_w, font_name, size, center)
+        draw_wrapped_string(can, val, x, y, max_w, font_name, size, center)
 
     can.save()
     packet.seek(0)
