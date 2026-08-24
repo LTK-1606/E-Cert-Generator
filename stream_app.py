@@ -1,5 +1,5 @@
 import streamlit as st
-import fitz
+import pymupdf
 from auth import authenticate_google
 from processor import run_generation
 from cert_generator import generate_cert
@@ -159,7 +159,7 @@ if "worksheets" in st.session_state and uploaded_template:
                     
                     preview_bytes = generate_cert(template_bytes, sample_row, template_config)
                     
-                    doc = fitz.open(stream=preview_bytes, filetype="pdf")
+                    doc = pymupdf.open(stream=preview_bytes, filetype="pdf")
                     for page_num in range(len(doc)):
                         page = doc[page_num]
                         pix = page.get_pixmap()
