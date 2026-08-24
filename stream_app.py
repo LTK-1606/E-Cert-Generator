@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 import pymupdf
 from auth import authenticate_google
@@ -171,19 +172,39 @@ else:
 
 st.divider()
 
-if st.button("🚀 Start Bulk Generation & Upload", type="primary", width='stretch'):
+if "bulk_processing_active" not in st.session_state:
+    st.session_state.bulk_processing_active = False
+
+def start_execution():
+    st.session_state.bulk_processing_active = True
+
+st.button(
+    "🚀 Start Bulk Generation & Upload", 
+    type="primary", 
+    use_container_width=True, 
+    on_click=start_execution,
+    disabled=st.session_state.bulk_processing_active
+)
+
+if st.session_state.bulk_processing_active:
     if not uploaded_template:
         st.error("Please upload a PDF template.")
+        st.session_state.bulk_processing_active = False
     elif not sheet_url:
         st.error("Please enter a Google Sheet URL.")
+        st.session_state.bulk_processing_active = False
     elif not selected_sheets:
         st.error("Please select at least one sheet to process.")
+        st.session_state.bulk_processing_active = False
     elif not primary_col:
         st.error("Please select a name column.")
+        st.session_state.bulk_processing_active = False
     elif not user_id_col:
         st.error("Please select a user ID column.")
+        st.session_state.bulk_processing_active = False 
     elif not template_config:
         st.error("Please map at least one field for the certificate template.")
+        st.session_state.bulk_processing_active = False
     else:
         with st.spinner("Validating columns exist across all selected sheets..."):
             validation_failed = False
@@ -202,7 +223,10 @@ if st.button("🚀 Start Bulk Generation & Upload", type="primary", width='stret
                     validation_failed = True
                     break
 
-        if not validation_failed:
+        if validation_failed:
+            st.session_state.bulk_processing_active = False
+            st.button("🔄 Try Again") 
+        else:
             with st.status("Processing Certificates...", expanded=True) as status:
                 sheet_status = st.empty()
                 col1, col2 = st.columns(2)
@@ -248,12 +272,17 @@ if st.button("🚀 Start Bulk Generation & Upload", type="primary", width='stret
                     
                     status.update(label="All tasks finished successfully!", state="complete", expanded=False)
                     st.session_state["process_completed"] = True
+                    st.session_state.bulk_processing_active = False
 
                 except Exception as e:
                     status.update(label="An error occurred during processing.", state="error", expanded=True)
                     st.error(f"Processing failed: {e}")
+                    st.session_state.bulk_processing_active = False
 
 if st.session_state.get("process_completed", False):
     st.balloons()
     st.success("✨ Certificates generated, uploaded, and sheet updated successfully!")
+    st.success("Reloading app...")
     del st.session_state["process_completed"]
+    time.sleep(5.0)
+    st.rerun()
