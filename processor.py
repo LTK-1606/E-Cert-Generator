@@ -187,27 +187,20 @@ def run_generation(sheet_url, target_sheets, primary_col, user_id_col, template_
             link_col_idx = get_or_add_column('Cert_Link', sheet_header_labels)
             id_col_idx = get_or_add_column('Cert_Link_ID', sheet_header_labels)
 
-            user_id_header_name = user_id_col if user_id_col in sheet_header_labels else None
-            user_id_col_idx = sheet_header_labels.index(user_id_header_name) + 1      
-            sheet_user_ids = worksheet.col_values(user_id_col_idx)          
-            row_mapping = {str(uid): idx + 1 for idx, uid in enumerate(sheet_user_ids) if idx > 0}
             batch_updates = []
 
-            for _, row in df.iterrows():
-                df_user_id = str(row[user_id_col]).strip() if user_id_col in df.columns else ""
+            for index, row in df.iterrows():
+                target_row = index + 2 
                 
-                if df_user_id in row_mapping:
-                    target_row = row_mapping[df_user_id]
-                    
-                    batch_updates.append({
-                        'range': rowcol_to_a1(target_row, link_col_idx),
-                        'values': [[str(row['Cert_Link'])]]
-                    })
-                    
-                    batch_updates.append({
-                        'range': rowcol_to_a1(target_row, id_col_idx),
-                        'values': [[str(row['Cert_Link_ID'])]]
-                    })
+                batch_updates.append({
+                    'range': rowcol_to_a1(target_row, link_col_idx),
+                    'values': [[str(row.get('Cert_Link', ''))]]
+                })
+                
+                batch_updates.append({
+                    'range': rowcol_to_a1(target_row, id_col_idx),
+                    'values': [[str(row.get('Cert_Link_ID', ''))]]
+                })
 
             if batch_updates:
                 worksheet.batch_update(batch_updates)
